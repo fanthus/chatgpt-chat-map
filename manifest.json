@@ -4,10 +4,6 @@
   "version": "1.0.0",
   "description": "在 ChatGPT 等对话页右侧展示用户消息列表，点击可滚动到对应对话位置",
   "permissions": [],
-  "host_permissions": [
-    "https://chat.openai.com/*",
-    "https://chatgpt.com/*"
-  ],
   "content_scripts": [
     {
       "matches": [
