@@ -1,15 +1,6 @@
 (function () {
   'use strict';
 
-  function injectFonts() {
-    if (document.getElementById('chat-map-fonts')) return;
-    const link = document.createElement('link');
-    link.id = 'chat-map-fonts';
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap';
-    document.head.appendChild(link);
-  }
-
   const SIDEBAR_ID = 'chat-map-sidebar';
   const LIST_ID = 'chat-map-list';
   const USER_SELECTOR = 'div[data-message-author-role="user"]';
@@ -218,9 +209,47 @@
     el.classList.add(HIGHLIGHT_CLASS);
   }
 
+  function getScrollParent(el) {
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+      const style = getComputedStyle(node);
+      if (/auto|scroll|overlay/.test(style.overflowY) && node.scrollHeight > node.clientHeight)
+        return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
   function scrollToElement(el) {
     setMessageHighlight(el);
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const scrollParent = getScrollParent(el);
+    const duration = 350;
+    const startTime = performance.now();
+    let startScroll;
+    let targetScroll;
+    if (scrollParent) {
+      const cr = scrollParent.getBoundingClientRect();
+      const er = el.getBoundingClientRect();
+      startScroll = scrollParent.scrollTop;
+      targetScroll = startScroll + (er.top - cr.top);
+    } else {
+      startScroll = window.scrollY;
+      targetScroll = el.getBoundingClientRect().top + window.scrollY;
+    }
+
+    function easeOutQuad(t) {
+      return 1 - (1 - t) * (1 - t);
+    }
+
+    function step(now) {
+      const t = Math.min((now - startTime) / duration, 1);
+      const eased = easeOutQuad(t);
+      const value = startScroll + (targetScroll - startScroll) * eased;
+      if (scrollParent) scrollParent.scrollTop = value;
+      else window.scrollTo(0, value);
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
   }
 
   function copyMessageText(el) {
@@ -311,7 +340,6 @@
 
   function init() {
     try {
-      injectFonts();
       refresh();
       observeConversation();
       window.addEventListener('storage', (e) => {

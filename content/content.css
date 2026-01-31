@@ -1,6 +1,6 @@
 /* ChatGPT Chat Map — 侧栏面板，亮色默认 */
 #chat-map-sidebar {
-  --cm-font: "DM Sans", system-ui, -apple-system, sans-serif;
+  --cm-font: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --cm-bg: #fafaf9;
   --cm-bg-hover: rgba(15, 118, 110, 0.06);
   --cm-border: rgba(15, 118, 110, 0.2);
