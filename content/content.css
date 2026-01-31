@@ -1,14 +1,15 @@
-/* ChatGPT Chat Map — 编辑感侧栏，变量与亮色默认 */
+/* ChatGPT Chat Map — 侧栏面板，亮色默认 */
 #chat-map-sidebar {
   --cm-font: "DM Sans", system-ui, -apple-system, sans-serif;
   --cm-bg: #fafaf9;
   --cm-bg-hover: rgba(15, 118, 110, 0.06);
-  --cm-border: rgba(15, 118, 110, 0.12);
+  --cm-border: rgba(15, 118, 110, 0.2);
+  --cm-border-outer: rgba(15, 118, 110, 0.12);
   --cm-text: #1c1917;
   --cm-text-muted: #57534e;
   --cm-accent: #0f766e;
   --cm-accent-soft: #0d9488;
-  --cm-shadow: -4px 0 24px rgba(0, 0, 0, 0.06);
+  --cm-shadow: -4px 0 24px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--cm-border-outer);
   --cm-highlight-ring: 2px solid var(--cm-accent);
   position: fixed;
   top: 50%;
@@ -16,14 +17,16 @@
   transform: translateY(-50%) translateX(0);
   width: 300px;
   max-height: 90vh;
+  margin: 0 8px;
   padding: 16px 0;
   background: var(--cm-bg);
   box-shadow: var(--cm-shadow);
+  border: 1px solid var(--cm-border);
+  border-radius: 12px 0 0 12px;
   z-index: 9999;
   overflow-y: auto;
   font-family: var(--cm-font);
   font-size: 13px;
-  border-left: 1px solid var(--cm-border);
   animation: chat-map-slide-in 0.25s ease-out;
 }
 
@@ -42,12 +45,13 @@
   #chat-map-sidebar {
     --cm-bg: #1c1917;
     --cm-bg-hover: rgba(45, 212, 191, 0.08);
-    --cm-border: rgba(45, 212, 191, 0.15);
+    --cm-border: rgba(45, 212, 191, 0.22);
+    --cm-border-outer: rgba(45, 212, 191, 0.12);
     --cm-text: #fafaf9;
     --cm-text-muted: #a8a29e;
     --cm-accent: #2dd4bf;
     --cm-accent-soft: #5eead4;
-    --cm-shadow: -4px 0 24px rgba(0, 0, 0, 0.35);
+    --cm-shadow: -4px 0 24px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--cm-border-outer);
   }
 }
 
