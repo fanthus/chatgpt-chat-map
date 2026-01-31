@@ -21,6 +21,9 @@
   let conversationMap = new Map();
   let conversationFetch = null;
   let conversationFetchedAt = 0;
+  let lastClickTime = 0;
+  const REFRESH_DEBOUNCE_MS = 400;
+  let lastItemKeys = null;
 
   function getReactFiber(node) {
     if (!node) return null;
@@ -175,8 +178,10 @@
     const nodes = document.querySelectorAll(USER_SELECTOR);
     return Array.from(nodes).map((el) => {
       const container = el.closest('div[data-message-id]');
+      const messageId = container?.getAttribute('data-message-id') ?? null;
       return {
         el,
+        messageId,
         text: getPreviewText(el),
         time: (container && timeMap.get(container)) ?? null,
       };
@@ -293,12 +298,20 @@
       label.textContent = item.text || `(消息 ${index + 1})`;
       li.addEventListener('click', (e) => {
         if (e.target.closest('button')) return;
-        scrollToElement(item.el);
+        lastClickTime = Date.now();
+        const target =
+          (item.messageId && document.querySelector(`div[data-message-id="${item.messageId}"]`)) ||
+          (item.el?.isConnected ? item.el : null);
+        if (target) scrollToElement(target);
       });
       li.appendChild(topRow);
       li.appendChild(label);
       list.appendChild(li);
     });
+  }
+
+  function itemKeys(items) {
+    return items.map((i) => i.messageId ?? i.text?.slice(0, 80) ?? '').join('\0');
   }
 
   function refresh() {
@@ -310,10 +323,14 @@
     if (items.length === 0) {
       const root = document.getElementById(SIDEBAR_ID);
       if (root) root.classList.add('chat-map-empty');
+      lastItemKeys = null;
       return;
     }
     const root = document.getElementById(SIDEBAR_ID);
     if (root) root.classList.remove('chat-map-empty');
+    const keys = itemKeys(items);
+    if (lastItemKeys === keys) return;
+    lastItemKeys = keys;
     renderList(items);
   }
 
@@ -325,6 +342,7 @@
       const ours = document.getElementById(SIDEBAR_ID);
       const onlyOurs = ours && mutations.every((m) => ours.contains(m.target));
       if (onlyOurs) return;
+      if (Date.now() - lastClickTime < REFRESH_DEBOUNCE_MS) return;
       if (raf) cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         raf = 0;
