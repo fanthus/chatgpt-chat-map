@@ -3,14 +3,13 @@
   --cm-font: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --cm-bg: #fafaf9;
   --cm-bg-hover: rgba(15, 118, 110, 0.06);
-  --cm-border: rgba(15, 118, 110, 0.2);
-  --cm-border-outer: rgba(15, 118, 110, 0.12);
+  --cm-border: rgba(0, 0, 0, 0.06);
   --cm-text: #1c1917;
   --cm-text-muted: #57534e;
   --cm-accent: #0f766e;
   --cm-accent-soft: #0d9488;
-  --cm-shadow: -4px 0 24px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--cm-border-outer);
-  --cm-highlight-ring: 2px solid var(--cm-accent);
+  --cm-shadow: -4px 0 20px rgba(0, 0, 0, 0.06);
+  --cm-highlight-ring: 1px solid var(--cm-accent);
   position: fixed;
   top: 25%;
   right: 0;
@@ -45,13 +44,12 @@
   #chat-map-sidebar {
     --cm-bg: #1c1917;
     --cm-bg-hover: rgba(45, 212, 191, 0.08);
-    --cm-border: rgba(45, 212, 191, 0.22);
-    --cm-border-outer: rgba(45, 212, 191, 0.12);
+    --cm-border: rgba(255, 255, 255, 0.07);
     --cm-text: #fafaf9;
     --cm-text-muted: #a8a29e;
     --cm-accent: #2dd4bf;
     --cm-accent-soft: #5eead4;
-    --cm-shadow: -4px 0 24px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--cm-border-outer);
+    --cm-shadow: -4px 0 20px rgba(0, 0, 0, 0.35);
   }
 }
 
@@ -137,7 +135,7 @@
   border-radius: 4px;
   color: var(--cm-text);
   line-height: 1.45;
-  border-left: 2px solid transparent;
+  border-left: 1px solid transparent;
   transition: background 0.2s ease, border-left-color 0.2s ease;
 }
 
