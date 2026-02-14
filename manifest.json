@@ -3,13 +3,18 @@
   "name": "ChatGPT Chat Map",
   "version": "1.0.0",
   "description": "在 ChatGPT 等对话页右侧展示用户消息列表，点击可滚动到对应对话位置",
-  "permissions": [],
+  "permissions": ["storage"],
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
   "content_scripts": [
     {
-      "matches": [
-        "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
-      ],
+      "matches": ["https://chat.openai.com/*", "https://chatgpt.com/*"],
+      "js": ["content/hide-toggle.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://chat.openai.com/*", "https://chatgpt.com/*"],
       "js": ["content/content.js"],
       "css": ["content/content.css"],
       "run_at": "document_idle",

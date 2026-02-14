@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChatGPT Chat Map</title>
+  <style>
+    body {
+      width: 200px;
+      margin: 0;
+      padding: 12px;
+      font: 13px system-ui, -apple-system, sans-serif;
+      color: #1c1917;
+    }
+    label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
+    }
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <label>
+    <span>在页面上隐藏插件</span>
+    <input type="checkbox" id="hide-on-page" />
+  </label>
+  <script src="popup.js"></script>
+</body>
+</html>

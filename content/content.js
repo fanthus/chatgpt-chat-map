@@ -24,6 +24,8 @@
   let lastClickTime = 0;
   const REFRESH_DEBOUNCE_MS = 400;
   let lastItemKeys = null;
+  let sidebarCollapsed = false;
+  const SIDEBAR_COLLAPSED_KEY = 'chat-map-sidebar-collapsed';
 
   function getReactFiber(node) {
     if (!node) return null;
@@ -190,20 +192,80 @@
 
   function ensureSidebar() {
     let root = document.getElementById(SIDEBAR_ID);
-    if (root) return root;
+    if (root) {
+      if (!root.querySelector('.chat-map-collapse-btn')) {
+        sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+        injectCollapseButton(root);
+      }
+      return root;
+    }
+    sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
     root = document.createElement('div');
     root.id = SIDEBAR_ID;
     root.setAttribute('aria-label', '用户消息列表');
-    const title = document.createElement('h2');
-    title.className = 'chat-map-title';
-    title.textContent = 'ChatGPT Chat Map';
-    root.appendChild(title);
+    if (sidebarCollapsed) root.classList.add('chat-map-collapsed');
+
+    const header = document.createElement('div');
+    header.className = 'chat-map-header';
+    const titleText = document.createElement('span');
+    titleText.className = 'chat-map-title';
+    titleText.textContent = 'ChatGPT Chat Map';
+    const collapseBtn = document.createElement('button');
+    collapseBtn.type = 'button';
+    collapseBtn.className = 'chat-map-collapse-btn';
+    collapseBtn.setAttribute('aria-label', sidebarCollapsed ? '展开面板' : '贴边收起');
+    collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
+    collapseBtn.addEventListener('click', () => {
+      sidebarCollapsed = !sidebarCollapsed;
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+      root.classList.toggle('chat-map-collapsed', sidebarCollapsed);
+      collapseBtn.setAttribute('aria-label', sidebarCollapsed ? '展开面板' : '贴边收起');
+      collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
+    });
+    header.appendChild(titleText);
+    header.appendChild(collapseBtn);
+    root.appendChild(header);
+
     const list = document.createElement('ol');
     list.id = LIST_ID;
     list.className = 'chat-map-list';
     root.appendChild(list);
     document.body.appendChild(root);
     return root;
+  }
+
+  function injectCollapseButton(root) {
+    const oldTitle = root.querySelector('.chat-map-title');
+    if (!oldTitle) return;
+    if (sidebarCollapsed) root.classList.add('chat-map-collapsed');
+    const header = document.createElement('div');
+    header.className = 'chat-map-header';
+    const titleText = document.createElement('span');
+    titleText.className = 'chat-map-title';
+    titleText.textContent = oldTitle.textContent || 'ChatGPT Chat Map';
+    const collapseBtn = document.createElement('button');
+    collapseBtn.type = 'button';
+    collapseBtn.className = 'chat-map-collapse-btn';
+    collapseBtn.setAttribute('aria-label', sidebarCollapsed ? '展开面板' : '贴边收起');
+    collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
+    collapseBtn.addEventListener('click', () => {
+      sidebarCollapsed = !sidebarCollapsed;
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+      root.classList.toggle('chat-map-collapsed', sidebarCollapsed);
+      collapseBtn.setAttribute('aria-label', sidebarCollapsed ? '展开面板' : '贴边收起');
+      collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
+    });
+    header.appendChild(titleText);
+    header.appendChild(collapseBtn);
+    oldTitle.replaceWith(header);
+  }
+
+  function getCollapseSvg() {
+    return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>';
+  }
+
+  function getExpandSvg() {
+    return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>';
   }
 
   function setMessageHighlight(el) {
