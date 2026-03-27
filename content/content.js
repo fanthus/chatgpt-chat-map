@@ -3,14 +3,20 @@
 
   const SIDEBAR_ID = 'chat-map-sidebar';
   const LIST_ID = 'chat-map-list';
+  const HOVER_TOOLTIP_ID = 'chat-map-hover-tooltip';
   const USER_SELECTOR = 'div[data-message-author-role="user"]';
   const HIGHLIGHT_CLASS = 'chat-map-message-highlight';
   const MAX_PREVIEW_LEN = 48;
 
   let highlightedEl = null;
+  let hoverTooltipEl = null;
+
+  function getMessageText(el) {
+    return (el.textContent || '').trim();
+  }
 
   function getPreviewText(el) {
-    const raw = (el.textContent || '').trim().replace(/\s+/g, ' ');
+    const raw = getMessageText(el).replace(/\s+/g, ' ');
     return raw.length > MAX_PREVIEW_LEN ? raw.slice(0, MAX_PREVIEW_LEN) + '…' : raw;
   }
 
@@ -19,6 +25,7 @@
 
   let conversationId = null;
   let conversationMap = new Map();
+  let conversationData = null;
   let conversationFetch = null;
   let conversationFetchedAt = 0;
   let lastClickTime = 0;
@@ -83,9 +90,28 @@
     return map;
   }
 
-  async function fetchConversationMap() {
-    const id = getConversationIdFromLocation();
+  function syncConversationContext() {
+    const currentId = getConversationIdFromLocation();
+    if (currentId && currentId !== conversationId) {
+      conversationId = currentId;
+      conversationMap = new Map();
+      conversationData = null;
+      conversationFetch = null;
+      conversationFetchedAt = 0;
+    }
+    return currentId;
+  }
+
+  async function fetchConversationMap(force = false) {
+    const id = syncConversationContext();
     if (!id) return;
+    const stale =
+      force ||
+      !conversationFetchedAt ||
+      Date.now() - conversationFetchedAt > 30000 ||
+      !conversationMap.size ||
+      !conversationData;
+    if (!stale && conversationData) return conversationData;
     if (conversationFetch) return conversationFetch;
     conversationFetch = (async () => {
       try {
@@ -94,10 +120,13 @@
         });
         if (!res.ok) return;
         const data = await res.json();
+        conversationData = data;
         conversationMap = buildConversationMap(data);
         conversationFetchedAt = Date.now();
+        return data;
       } catch (e) {
         console.warn('[ChatGPT Chat Map] conversation fetch failed', e);
+        return null;
       } finally {
         conversationFetch = null;
       }
@@ -140,12 +169,7 @@
   }
 
   function buildMessageTimeMap() {
-    const currentId = getConversationIdFromLocation();
-    if (currentId && currentId !== conversationId) {
-      conversationId = currentId;
-      conversationMap = new Map();
-      conversationFetchedAt = 0;
-    }
+    const currentId = syncConversationContext();
     if (!conversationMap.size && currentId) {
       const stale = !conversationFetchedAt || Date.now() - conversationFetchedAt > 30000;
       if (stale) {
@@ -184,46 +208,231 @@
       return {
         el,
         messageId,
+        fullText: getMessageText(el),
         text: getPreviewText(el),
         time: (container && timeMap.get(container)) ?? null,
       };
     });
   }
 
+  function extractMessageTextFromContent(content) {
+    if (!content) return '';
+    const parts = Array.isArray(content.parts) ? content.parts : null;
+    if (parts) {
+      const text = parts
+        .map((part) => {
+          if (typeof part === 'string') return part;
+          if (typeof part === 'number' || typeof part === 'boolean') return String(part);
+          if (part && typeof part === 'object') {
+            if (typeof part.text === 'string') return part.text;
+            if (typeof part.content === 'string') return part.content;
+            if (typeof part.caption === 'string') return part.caption;
+          }
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+      if (text) return text;
+    }
+    if (typeof content.text === 'string') return content.text.trim();
+    if (typeof content === 'string') return content.trim();
+    if (typeof content.content_type === 'string') return `[${content.content_type}]`;
+    return '';
+  }
+
+  function collectConversationMessagesFromApi(data) {
+    const mapping = data?.mapping;
+    if (!mapping || typeof mapping !== 'object') return [];
+    const orderedNodeIds = [];
+    const seen = new Set();
+    let nodeId = data?.current_node;
+    while (nodeId && !seen.has(nodeId)) {
+      seen.add(nodeId);
+      const node = mapping[nodeId];
+      if (!node) break;
+      orderedNodeIds.push(nodeId);
+      nodeId = node.parent;
+    }
+    if (!orderedNodeIds.length) return [];
+    orderedNodeIds.reverse();
+
+    return orderedNodeIds
+      .map((id) => {
+        const node = mapping[id];
+        const message = node?.message;
+        const role = message?.author?.role;
+        if (role !== 'user' && role !== 'assistant') return null;
+        const text = extractMessageTextFromContent(message?.content);
+        if (!text) return null;
+        const createTime = coerceEpochSeconds(message?.create_time);
+        return {
+          role,
+          text,
+          time: createTime ? formatTimestamp(createTime) : null,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function collectConversationMessagesFromDom() {
+    return Array.from(document.querySelectorAll('div[data-message-author-role]'))
+      .map((el) => {
+        const role = el.getAttribute('data-message-author-role');
+        if (role !== 'user' && role !== 'assistant') return null;
+        const text = getMessageText(el);
+        if (!text) return null;
+        return { role, text, time: null };
+      })
+      .filter(Boolean);
+  }
+
+  function formatExportRole(role) {
+    return role === 'assistant' ? 'AI' : 'User';
+  }
+
+  function buildExportMarkdown(messages, meta) {
+    const lines = [
+      `# ${meta.title || 'ChatGPT Conversation Export'}`,
+      '',
+      `- Exported At: ${new Date().toLocaleString()}`,
+      `- Conversation ID: ${meta.id || 'unknown'}`,
+      `- Page: ${window.location.href}`,
+      `- Message Count: ${messages.length}`,
+      '',
+    ];
+    messages.forEach((message, idx) => {
+      const title = `## ${idx + 1}. ${formatExportRole(message.role)}${message.time ? ` (${message.time})` : ''}`;
+      lines.push(title, '', message.text, '');
+    });
+    return lines.join('\n');
+  }
+
+  function buildExportFilename(title) {
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${formatNum(now.getMonth() + 1)}${formatNum(now.getDate())}-${formatNum(now.getHours())}${formatNum(now.getMinutes())}${formatNum(now.getSeconds())}`;
+    const safeTitle = (title || 'chatgpt-conversation')
+      .replace(/[\\/:*?"<>|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 48);
+    const base = safeTitle || 'chatgpt-conversation';
+    return `${base}-${stamp}.md`;
+  }
+
+  function downloadTextFile(filename, content) {
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  async function exportConversation(button) {
+    if (!button || button.disabled) return;
+    const originalText = button.textContent || 'Export';
+    button.disabled = true;
+    button.textContent = 'Exporting...';
+    try {
+      const data = await fetchConversationMap(true);
+      let messages = collectConversationMessagesFromApi(data);
+      if (!messages.length) messages = collectConversationMessagesFromDom();
+      if (!messages.length) throw new Error('no messages');
+      const title = data?.title || document.title || 'chatgpt-conversation';
+      const markdown = buildExportMarkdown(messages, {
+        title,
+        id: getConversationIdFromLocation(),
+      });
+      const filename = buildExportFilename(title);
+      downloadTextFile(filename, markdown);
+      button.textContent = 'Downloaded';
+    } catch (e) {
+      console.warn('[ChatGPT Chat Map] export failed', e);
+      button.textContent = 'Export Failed';
+    } finally {
+      setTimeout(() => {
+        button.disabled = false;
+        button.textContent = originalText;
+      }, 1200);
+    }
+  }
+
+  function createCollapseButton(root) {
+    const collapseBtn = document.createElement('button');
+    collapseBtn.type = 'button';
+    collapseBtn.className = 'chat-map-collapse-btn';
+    collapseBtn.setAttribute('aria-label', sidebarCollapsed ? 'Expand panel' : 'Collapse panel');
+    collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
+    collapseBtn.addEventListener('click', () => {
+      sidebarCollapsed = !sidebarCollapsed;
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+      root.classList.toggle('chat-map-collapsed', sidebarCollapsed);
+      collapseBtn.setAttribute('aria-label', sidebarCollapsed ? 'Expand panel' : 'Collapse panel');
+      collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
+    });
+    return collapseBtn;
+  }
+
+  function createHeader(root, titleValue) {
+    const header = document.createElement('div');
+    header.className = 'chat-map-header';
+    const titleText = document.createElement('span');
+    titleText.className = 'chat-map-title';
+    titleText.textContent = titleValue || 'ChatGPT Chat Map';
+
+    const actions = document.createElement('div');
+    actions.className = 'chat-map-header-actions';
+
+    const exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'chat-map-export-btn';
+    exportBtn.setAttribute('aria-label', 'Export conversation');
+    exportBtn.textContent = 'Export';
+    exportBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exportConversation(exportBtn);
+    });
+
+    const collapseBtn = createCollapseButton(root);
+
+    actions.appendChild(exportBtn);
+    actions.appendChild(collapseBtn);
+    header.appendChild(titleText);
+    header.appendChild(actions);
+    return header;
+  }
+
+  function injectHeaderControls(root) {
+    const oldHeader = root.querySelector('.chat-map-header');
+    const titleValue = root.querySelector('.chat-map-title')?.textContent || 'ChatGPT Chat Map';
+    const nextHeader = createHeader(root, titleValue);
+    if (oldHeader) {
+      oldHeader.replaceWith(nextHeader);
+    } else {
+      root.prepend(nextHeader);
+    }
+  }
+
   function ensureSidebar() {
     let root = document.getElementById(SIDEBAR_ID);
     if (root) {
-      if (!root.querySelector('.chat-map-collapse-btn')) {
+      if (!root.querySelector('.chat-map-collapse-btn') || !root.querySelector('.chat-map-export-btn')) {
         sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
-        injectCollapseButton(root);
+        injectHeaderControls(root);
       }
       return root;
     }
     sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
     root = document.createElement('div');
     root.id = SIDEBAR_ID;
-    root.setAttribute('aria-label', '用户消息列表');
+    root.setAttribute('aria-label', 'Chat message list');
     if (sidebarCollapsed) root.classList.add('chat-map-collapsed');
 
-    const header = document.createElement('div');
-    header.className = 'chat-map-header';
-    const titleText = document.createElement('span');
-    titleText.className = 'chat-map-title';
-    titleText.textContent = 'ChatGPT Chat Map';
-    const collapseBtn = document.createElement('button');
-    collapseBtn.type = 'button';
-    collapseBtn.className = 'chat-map-collapse-btn';
-    collapseBtn.setAttribute('aria-label', sidebarCollapsed ? '展开面板' : '贴边收起');
-    collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
-    collapseBtn.addEventListener('click', () => {
-      sidebarCollapsed = !sidebarCollapsed;
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
-      root.classList.toggle('chat-map-collapsed', sidebarCollapsed);
-      collapseBtn.setAttribute('aria-label', sidebarCollapsed ? '展开面板' : '贴边收起');
-      collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
-    });
-    header.appendChild(titleText);
-    header.appendChild(collapseBtn);
+    const header = createHeader(root, 'ChatGPT Chat Map');
     root.appendChild(header);
 
     const list = document.createElement('ol');
@@ -232,32 +441,6 @@
     root.appendChild(list);
     document.body.appendChild(root);
     return root;
-  }
-
-  function injectCollapseButton(root) {
-    const oldTitle = root.querySelector('.chat-map-title');
-    if (!oldTitle) return;
-    if (sidebarCollapsed) root.classList.add('chat-map-collapsed');
-    const header = document.createElement('div');
-    header.className = 'chat-map-header';
-    const titleText = document.createElement('span');
-    titleText.className = 'chat-map-title';
-    titleText.textContent = oldTitle.textContent || 'ChatGPT Chat Map';
-    const collapseBtn = document.createElement('button');
-    collapseBtn.type = 'button';
-    collapseBtn.className = 'chat-map-collapse-btn';
-    collapseBtn.setAttribute('aria-label', sidebarCollapsed ? '展开面板' : '贴边收起');
-    collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
-    collapseBtn.addEventListener('click', () => {
-      sidebarCollapsed = !sidebarCollapsed;
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
-      root.classList.toggle('chat-map-collapsed', sidebarCollapsed);
-      collapseBtn.setAttribute('aria-label', sidebarCollapsed ? '展开面板' : '贴边收起');
-      collapseBtn.innerHTML = sidebarCollapsed ? getExpandSvg() : getCollapseSvg();
-    });
-    header.appendChild(titleText);
-    header.appendChild(collapseBtn);
-    oldTitle.replaceWith(header);
   }
 
   function getCollapseSvg() {
@@ -325,13 +508,65 @@
     navigator.clipboard.writeText(raw).catch(() => {});
   }
 
+  function ensureHoverTooltip() {
+    if (hoverTooltipEl?.isConnected) return hoverTooltipEl;
+    hoverTooltipEl = document.getElementById(HOVER_TOOLTIP_ID);
+    if (hoverTooltipEl) return hoverTooltipEl;
+    hoverTooltipEl = document.createElement('div');
+    hoverTooltipEl.id = HOVER_TOOLTIP_ID;
+    document.body.appendChild(hoverTooltipEl);
+    return hoverTooltipEl;
+  }
+
+  function positionHoverTooltip(anchorEl, tooltipEl) {
+    if (!anchorEl || !tooltipEl) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const tipRect = tooltipEl.getBoundingClientRect();
+    const gap = 12;
+    const pad = 10;
+    let left = rect.left - tipRect.width - gap;
+    let side = 'left';
+    if (left < pad) {
+      side = 'right';
+      left = rect.right + gap;
+    }
+    if (left + tipRect.width > window.innerWidth - pad) {
+      left = window.innerWidth - tipRect.width - pad;
+    }
+    if (left < pad) left = pad;
+    let top = rect.top;
+    if (top + tipRect.height > window.innerHeight - pad) top = window.innerHeight - tipRect.height - pad;
+    if (top < pad) top = pad;
+    tooltipEl.setAttribute('data-side', side);
+    tooltipEl.style.left = `${Math.round(left)}px`;
+    tooltipEl.style.top = `${Math.round(top)}px`;
+  }
+
+  function showHoverTooltip(anchorEl, text) {
+    if (!text) return;
+    const tooltipEl = ensureHoverTooltip();
+    tooltipEl.textContent = text;
+    tooltipEl.classList.add('chat-map-hover-tooltip-visible');
+    positionHoverTooltip(anchorEl, tooltipEl);
+  }
+
+  function hideHoverTooltip() {
+    if (!hoverTooltipEl?.isConnected) return;
+    hoverTooltipEl.classList.remove('chat-map-hover-tooltip-visible');
+    hoverTooltipEl.textContent = '';
+  }
+
   function renderList(items) {
     const root = ensureSidebar();
     const list = root.querySelector(`#${LIST_ID}`);
+    hideHoverTooltip();
     list.innerHTML = '';
     items.forEach((item, index) => {
       const li = document.createElement('li');
       li.className = 'chat-map-item';
+      const fallbackText = `(Message ${index + 1})`;
+      const previewText = item.text || fallbackText;
+      const fullText = item.fullText || previewText;
       const topRow = document.createElement('div');
       topRow.className = 'chat-map-item-top';
       const timeSpan = document.createElement('span');
@@ -340,13 +575,13 @@
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
       copyBtn.className = 'chat-map-item-copy';
-      copyBtn.setAttribute('aria-label', '复制');
-      copyBtn.textContent = '复制';
+      copyBtn.setAttribute('aria-label', 'Copy message');
+      copyBtn.textContent = 'Copy';
       copyBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         copyMessageText(item.el);
         const t = copyBtn.textContent;
-        copyBtn.textContent = '已复制';
+        copyBtn.textContent = 'Copied';
         copyBtn.disabled = true;
         setTimeout(() => {
           copyBtn.textContent = t;
@@ -357,9 +592,19 @@
       topRow.appendChild(copyBtn);
       const label = document.createElement('span');
       label.className = 'chat-map-item-label';
-      label.textContent = item.text || `(消息 ${index + 1})`;
+      label.textContent = previewText;
+      li.addEventListener('mouseenter', () => {
+        showHoverTooltip(li, fullText);
+      });
+      li.addEventListener('mousemove', () => {
+        if (hoverTooltipEl?.classList.contains('chat-map-hover-tooltip-visible')) {
+          positionHoverTooltip(li, hoverTooltipEl);
+        }
+      });
+      li.addEventListener('mouseleave', hideHoverTooltip);
       li.addEventListener('click', (e) => {
         if (e.target.closest('button')) return;
+        hideHoverTooltip();
         lastClickTime = Date.now();
         const target =
           (item.messageId && document.querySelector(`div[data-message-id="${item.messageId}"]`)) ||
@@ -383,6 +628,7 @@
     highlightedEl = null;
     const items = collectUserMessages();
     if (items.length === 0) {
+      hideHoverTooltip();
       const root = document.getElementById(SIDEBAR_ID);
       if (root) root.classList.add('chat-map-empty');
       lastItemKeys = null;
@@ -427,6 +673,8 @@
           refresh();
         }
       });
+      window.addEventListener('scroll', hideHoverTooltip, true);
+      window.addEventListener('resize', hideHoverTooltip);
     } catch (e) {
       console.warn('[ChatGPT Chat Map] init failed', e);
     }
