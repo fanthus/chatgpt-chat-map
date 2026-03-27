@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Chat Map",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Show a chat message map on the right side of ChatGPT pages and jump to message positions on click.",
   "permissions": ["storage"],
   "action": {
